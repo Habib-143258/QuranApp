@@ -1,32 +1,33 @@
-class UrlClass {
-  static String baseurl2 = "https://portal.smpbuh.com";
-  static String getAlllanguages = "$baseurl2/language/getalllanguages";
-}
+// class UrlClass {
+//   static String baseurl2 = "https://portal.smpbuh.com";
+//   static String getAlllanguages = "$baseurl2/language/getalllanguages";
+// }
 
 class NewUrlClass {
   String languageCode;
 
   NewUrlClass({this.languageCode = 'en'});
 
-  static String baseurl2 = "https://portal.smpbuh.com";
+  static String baseurl2 = "https://quranapi.pages.dev/api";
 
   String buildUrl(String endpoint) {
-    if (languageCode.isEmpty) {
-      return "$baseurl2$endpoint";
-    }
-    return "$baseurl2$endpoint?language=$languageCode";
+    return "$baseurl2$endpoint";
   }
 
   String getSurahListApi() {
-    return buildUrl("/api/quran/chapters");
+    return buildUrl("/surah.json");
   }
 
   String getAyatListApi({required int sectionID}) {
-    return buildUrl("/api/quran/verses?chapter_number=$sectionID");
+    return buildUrl("/$sectionID.json");
   }
 
   String getParahListApi() {
-    return buildUrl("/api/quran/parahs");
+    return buildUrl("/juz.json");
+  }
+
+  String getParahDetailApi({required int juzNumber}) {
+    return buildUrl("/juz/$juzNumber.json");
   }
 
   String getAllLanguages() {
@@ -34,6 +35,6 @@ class NewUrlClass {
   }
 
   String getQuranAllVersesApi() {
-    return buildUrl("/api/quran/verses");
+    return buildUrl("/surah.json");
   }
 }

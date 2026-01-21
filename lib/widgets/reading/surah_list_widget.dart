@@ -74,7 +74,7 @@ class SurahListWidget extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                surah.id.toString(),
+                (surah.id ?? 0).toString(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,

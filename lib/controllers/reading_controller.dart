@@ -29,13 +29,16 @@ class ReadingController extends GetxController {
       print('Surahs Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonResponse = json.decode(response.body);
-        final List<dynamic> chapters = jsonResponse['chapters'] ?? [];
+        final List<dynamic> jsonResponse = json.decode(response.body);
 
-        print('Parsed ${chapters.length} surahs');
-        surahList.value = chapters
-            .map((surah) => SurahModel.fromJson(surah as Map<String, dynamic>))
-            .toList();
+        print('Parsed ${jsonResponse.length} surahs');
+        surahList.value = jsonResponse.asMap().entries.map((entry) {
+          final index = entry.key;
+          final surah = entry.value as Map<String, dynamic>;
+          // Add the ID based on array index (1-indexed)
+          surah['id'] = index + 1;
+          return SurahModel.fromJson(surah);
+        }).toList();
         print('Surah list updated: ${surahList.length}');
       } else {
         print('Error status: ${response.statusCode}');
