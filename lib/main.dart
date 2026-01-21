@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:quran_app/data/services/quran_api_service.dart';
+import 'package:quran_app/data/services/hive_service.dart';
 import 'package:quran_app/controllers/quran_controller.dart';
 import 'package:quran_app/controllers/daily_goal_controller.dart';
 import 'package:quran_app/navigation/app_routes.dart';
-import 'package:quran_app/config/url_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  /// Initialize Hive for local database
+  await HiveService().init();
+
   /// Local storage (for future progress saving)
   await GetStorage.init();
-
-  /// Language (Urdu by default)
-  final url = NewUrlClass(languageCode: "ur");
 
   /// Dependency Injection
   Get.put<QuranApiService>(QuranApiService(), permanent: true);

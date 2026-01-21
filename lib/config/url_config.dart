@@ -37,4 +37,14 @@ class NewUrlClass {
   String getQuranAllVersesApi() {
     return buildUrl("/surah.json");
   }
+
+  /// Parah/Juz API endpoints (alquran.cloud)
+  static String parahBaseUrl = "http://api.alquran.cloud/v1/juz";
+
+  static String getParahDataApi(
+    int juzNumber, {
+    String translation = "ur.ahmedali",
+  }) {
+    return "$parahBaseUrl/$juzNumber/$translation";
+  }
 }

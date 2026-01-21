@@ -5,25 +5,44 @@ import 'package:quran_app/models/surah_model.dart';
 import 'package:quran_app/models/parah_model.dart';
 import 'package:quran_app/navigation/app_routes.dart';
 
-class SurahListWidget extends StatelessWidget {
+class SurahListWidget extends StatefulWidget {
   const SurahListWidget({super.key});
 
+  @override
+  State<SurahListWidget> createState() => _SurahListWidgetState();
+}
+
+class _SurahListWidgetState extends State<SurahListWidget> {
   @override
   Widget build(BuildContext context) {
     final ReadingController controller = Get.find<ReadingController>();
 
     return Obx(() {
-      if (controller.isLoading.value) {
-        return const Center(child: CircularProgressIndicator());
+      final items = controller.getFilteredItems();
+      final isLoading = controller.isLoading.value;
+
+      // Show loading spinner only on initial load (when no items cached)
+      if (isLoading && items.isEmpty) {
+        return const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading surahs...'),
+            ],
+          ),
+        );
       }
 
-      final items = controller.getFilteredItems();
-
-      if (items.isEmpty) {
+      // Show empty state if no items and not loading
+      if (items.isEmpty && !isLoading) {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const Icon(Icons.search_off, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
               const Text('No items available'),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -41,21 +60,39 @@ class SurahListWidget extends StatelessWidget {
         );
       }
 
-      return ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: items.length,
-        itemBuilder: (context, index) {
+      // Show list with refresh indicator
+      return RefreshIndicator(
+        onRefresh: () async {
           if (controller.selectedFilter.value == 'surah') {
-            return _buildSurahItem(items[index] as SurahModel);
+            await controller.fetchSurahList();
           } else {
-            return _buildParahItem(items[index] as ParahModel);
+            await controller.fetchParahList();
           }
         },
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            if (controller.selectedFilter.value == 'surah') {
+              return _SurahItemCard(surah: items[index] as SurahModel);
+            } else {
+              return _ParahItemCard(parah: items[index] as ParahModel);
+            }
+          },
+        ),
       );
     });
   }
+}
 
-  Widget _buildSurahItem(SurahModel surah) {
+/// Individual Surah item card widget
+class _SurahItemCard extends StatelessWidget {
+  final SurahModel surah;
+
+  const _SurahItemCard({required this.surah});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
@@ -65,64 +102,108 @@ class SurahListWidget extends StatelessWidget {
         ),
         child: ListTile(
           contentPadding: const EdgeInsets.all(12),
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: Color(0xFF009688),
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-            ),
-            child: Center(
-              child: Text(
-                (surah.id ?? 0).toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ),
+          leading: _SurahNumberBadge(number: surah.id ?? 0),
           title: Text(
-            surah.englishName ?? 'Unknown',
+            surah.englishName,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                surah.englishNameTranslation ?? '',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${surah.revelationType ?? 'Unknown'} • ${surah.numberOfAyahs ?? 0} verses',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-              ),
-            ],
-          ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                surah.name ?? '',
-                style: const TextStyle(
-                  color: Color(0xFF009688),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-                textDirection: TextDirection.rtl,
-              ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
-            ],
-          ),
+          subtitle: _SurahSubtitle(surah: surah),
+          trailing: _SurahArabicName(surah: surah),
           onTap: () => Get.toNamed(AppRoutes.surahDetail, arguments: surah),
         ),
       ),
     );
   }
+}
 
-  Widget _buildParahItem(ParahModel parah) {
+/// Surah number badge
+class _SurahNumberBadge extends StatelessWidget {
+  final int number;
+
+  const _SurahNumberBadge({required this.number});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Color(0xFF009688),
+        borderRadius: BorderRadius.all(Radius.circular(8)),
+      ),
+      child: Center(
+        child: Text(
+          number.toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Surah subtitle with translation and revelation type
+class _SurahSubtitle extends StatelessWidget {
+  final SurahModel surah;
+
+  const _SurahSubtitle({required this.surah});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          surah.englishNameTranslation,
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '${surah.revelationType} • ${surah.numberOfAyahs} verses',
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
+/// Surah Arabic name with chevron
+class _SurahArabicName extends StatelessWidget {
+  final SurahModel surah;
+
+  const _SurahArabicName({required this.surah});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          surah.name,
+          style: const TextStyle(
+            color: Color(0xFF009688),
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+          textDirection: TextDirection.rtl,
+        ),
+        const Icon(Icons.chevron_right, color: Colors.grey),
+      ],
+    );
+  }
+}
+
+/// Individual Parah item card widget
+class _ParahItemCard extends StatelessWidget {
+  final ParahModel parah;
+
+  const _ParahItemCard({required this.parah});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
@@ -170,7 +251,7 @@ class SurahListWidget extends StatelessWidget {
             ],
           ),
           trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-          onTap: () => Get.snackbar('Info', 'Parah details coming soon'),
+          onTap: () => Get.toNamed(AppRoutes.parahDetail, arguments: parah),
         ),
       ),
     );

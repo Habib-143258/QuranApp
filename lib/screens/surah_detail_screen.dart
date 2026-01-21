@@ -165,7 +165,7 @@ class _ActionButtonsWidget extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: ElevatedButton(
               onPressed: () => showTranslation.value = !showTranslation.value,
@@ -279,7 +279,7 @@ class _VerseCardWidget extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Verse number badge
           Container(

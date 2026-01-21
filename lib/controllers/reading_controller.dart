@@ -1,9 +1,8 @@
 import 'package:get/get.dart';
-import 'package:quran_app/config/url_config.dart';
 import 'package:quran_app/models/surah_model.dart';
 import 'package:quran_app/models/parah_model.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:quran_app/data/services/api_service.dart';
+import 'package:quran_app/data/services/hive_service.dart';
 
 class ReadingController extends GetxController {
   final isLoading = false.obs;
@@ -12,39 +11,59 @@ class ReadingController extends GetxController {
   final selectedFilter = 'surah'.obs;
   final searchQuery = ''.obs;
 
+  final _apiService = ApiService();
+  final _hiveService = HiveService();
+
   @override
   void onInit() {
     super.onInit();
     fetchSurahList();
   }
 
+  /// Fetch surah list: API → compute() → Hive → UI
   Future<void> fetchSurahList() async {
     try {
       isLoading(true);
-      final urlConfig = NewUrlClass(languageCode: 'en');
-      final url = urlConfig.getSurahListApi();
-      print('Fetching Surahs from: $url');
 
-      final response = await http.get(Uri.parse(url));
-      print('Surahs Response status: ${response.statusCode}');
+      // Check if data exists in Hive cache
+      if (_hiveService.hasSurahList()) {
+        print('📱 Loading surahs from Hive cache');
+        final cachedSurahs = _hiveService.getSurahList();
+        surahList.value = cachedSurahs
+            .map((surah) => SurahModel.fromJson(surah))
+            .toList();
+        print('✅ Loaded ${surahList.length} surahs from cache');
+      }
 
-      if (response.statusCode == 200) {
-        final List<dynamic> jsonResponse = json.decode(response.body);
+      // Fetch from API with compute() for background parsing
+      final response = await _apiService.fetchSurahList();
 
-        print('Parsed ${jsonResponse.length} surahs');
-        surahList.value = jsonResponse.asMap().entries.map((entry) {
-          final index = entry.key;
-          final surah = entry.value as Map<String, dynamic>;
-          // Add the ID based on array index (1-indexed)
-          surah['id'] = index + 1;
-          return SurahModel.fromJson(surah);
+      if (response.isSuccess && response.data != null) {
+        // Add IDs and save to Hive
+        final surahsWithId = response.data!.asMap().entries.map((entry) {
+          final surah = entry.value;
+          surah['id'] = entry.key + 1;
+          return surah;
         }).toList();
-        print('Surah list updated: ${surahList.length}');
+
+        // Save to Hive
+        await _hiveService.saveSurahList(surahsWithId);
+        await _hiveService.setCacheTime('surahs', DateTime.now());
+
+        // Update UI
+        surahList.value = surahsWithId
+            .map((surah) => SurahModel.fromJson(surah))
+            .toList();
+        print('✅ Updated UI with ${surahList.length} surahs');
       } else {
-        print('Error status: ${response.statusCode}');
+        print('❌ Error: ${response.error}');
+        if (surahList.isEmpty) {
+          // Show error only if cache is also empty
+          Get.snackbar('Error', 'Failed to load surahs');
+        }
       }
     } catch (e) {
-      print('Error fetching Surahs: $e');
+      print('❌ Exception: $e');
     } finally {
       isLoading(false);
     }
@@ -53,30 +72,97 @@ class ReadingController extends GetxController {
   Future<void> fetchParahList() async {
     try {
       isLoading(true);
-      final urlConfig = NewUrlClass(languageCode: 'en');
-      final url = urlConfig.getParahListApi();
-      print('Fetching Parahs from: $url');
 
-      final response = await http.get(Uri.parse(url));
-      print('Parahs Response status: ${response.statusCode}');
+      // Check if all Parah data is cached and still valid (within 24 hours)
+      final parahCacheKey = 'parah_list_cache_time';
+      final isCacheValid = _hiveService.isCacheValid(parahCacheKey);
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> jsonResponse = json.decode(response.body);
-        final List<dynamic> parahs = jsonResponse['parahs'] ?? [];
+      if (isCacheValid && _hiveService.hasParahData(1)) {
+        print('📱 Loading Parahs from Hive cache (cache still valid)');
+        final parahList = <ParahModel>[];
+        for (int i = 1; i <= 30; i++) {
+          final cachedParah = _hiveService.getParahData(i);
+          if (cachedParah != null) {
+            final transformed = _transformParahResponse(cachedParah, i);
+            parahList.add(ParahModel.fromJson(transformed));
+          }
+        }
+        this.parahList.value = parahList;
+        print('✅ Loaded ${parahList.length} parahs from cache - NO API CALLS');
+        isLoading(false);
+        return; // Exit early - don't fetch from API
+      }
 
-        print('Parsed ${parahs.length} parahs');
-        parahList.value = parahs
-            .map((parah) => ParahModel.fromJson(parah as Map<String, dynamic>))
-            .toList();
-        print('Parah list updated: ${parahList.length}');
-      } else {
-        print('Error status: ${response.statusCode}');
+      // Load from cache first (even if expired) to show immediately
+      if (_hiveService.hasParahData(1)) {
+        print('📱 Loading expired cache while fetching fresh data...');
+        final parahList = <ParahModel>[];
+        for (int i = 1; i <= 30; i++) {
+          final cachedParah = _hiveService.getParahData(i);
+          if (cachedParah != null) {
+            final transformed = _transformParahResponse(cachedParah, i);
+            parahList.add(ParahModel.fromJson(transformed));
+          }
+        }
+        this.parahList.value = parahList;
+        print('✅ Showing stale cache: ${parahList.length} parahs');
+      }
+
+      // Fetch fresh data in background (don't block UI)
+      print('🌐 Fetching fresh Parah data (30 Juz)...');
+      final List<ParahModel> fetchedParahs = [];
+      int successCount = 0;
+
+      for (int juzNumber = 1; juzNumber <= 30; juzNumber++) {
+        final response = await _apiService.fetchParahData(juzNumber);
+
+        if (response.isSuccess && response.data != null) {
+          successCount++;
+          await _hiveService.saveParahData(juzNumber, response.data!);
+          final transformed = _transformParahResponse(
+            response.data!,
+            juzNumber,
+          );
+          fetchedParahs.add(ParahModel.fromJson(transformed));
+        } else {
+          print('⚠️ Error fetching Parah $juzNumber: ${response.error}');
+        }
+      }
+
+      // Update cache timestamp only if all were fetched successfully
+      if (successCount == 30) {
+        await _hiveService.setCacheTime(parahCacheKey, DateTime.now());
+        print('✅ All 30 Parahs fetched and cache updated');
+      }
+
+      if (fetchedParahs.isNotEmpty) {
+        parahList.value = fetchedParahs;
+        print('✅ Updated UI with ${fetchedParahs.length} parahs (fresh data)');
+      } else if (parahList.isEmpty) {
+        Get.snackbar('Error', 'Failed to load parahs');
       }
     } catch (e) {
-      print('Error fetching Parahs: $e');
+      print('❌ Exception: $e');
     } finally {
       isLoading(false);
     }
+  }
+
+  /// Transform alquran.cloud API response to ParahModel format
+  Map<String, dynamic> _transformParahResponse(
+    Map<String, dynamic> data,
+    int juzNumber,
+  ) {
+    final ayahs = data['ayahs'] as List? ?? [];
+    final versesCount = ayahs.length;
+
+    return {
+      'id': juzNumber,
+      'juz_number': juzNumber,
+      'juz_name': data['name'] ?? 'Juz $juzNumber',
+      'juz_name_simple': 'Juz $juzNumber',
+      'verses_count': versesCount,
+    };
   }
 
   void setFilter(String filter) {
@@ -107,12 +193,10 @@ class ReadingController extends GetxController {
     return surahList
         .where(
           (surah) =>
-              (surah.englishName?.toLowerCase().contains(
-                    searchQuery.toLowerCase(),
-                  ) ??
-                  false) ||
-              (surah.name?.toLowerCase().contains(searchQuery.toLowerCase()) ??
-                  false),
+              surah.englishName.toLowerCase().contains(
+                searchQuery.toLowerCase(),
+              ) ||
+              surah.name.toLowerCase().contains(searchQuery.toLowerCase()),
         )
         .toList();
   }
